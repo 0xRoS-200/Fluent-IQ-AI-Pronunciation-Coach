@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: fluentiq
+    runtime: docker
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false
+      - key: WHISPER_MODEL
+        value: base
