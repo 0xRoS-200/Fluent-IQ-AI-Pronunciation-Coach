@@ -136,8 +136,9 @@ async def analyze_audio(audio: UploadFile = File(...)):
             tmp_path = tmp.name
             audio_seg.export(tmp, format="wav")
 
-        # --- Run analysis --------------------------------------------------
-        result = analyzer.analyze(tmp_path)
+        # --- Run analysis in a background thread to prevent blocking the event loop ---
+        import asyncio
+        result = await asyncio.to_thread(analyzer.analyze, tmp_path)
         return result
 
     except HTTPException:

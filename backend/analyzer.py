@@ -39,8 +39,8 @@ class PronunciationAnalyzer:
 
         groq_key = os.environ.get("GROQ_API_KEY")
         if groq_key:
-            self.groq = Groq(api_key=groq_key)
-            logger.info("Groq client initialized.")
+            self.groq = Groq(api_key=groq_key, timeout=10.0)
+            logger.info("Groq client initialized with 10s timeout.")
         else:
             self.groq = None
             logger.warning("GROQ_API_KEY not set — LLM feedback will use fallback.")
