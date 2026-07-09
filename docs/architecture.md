@@ -37,13 +37,13 @@ graph TD
     Consent -->|User Accepts| UI
     Record -->|Blob| UI
     Uploader -->|File| UI
-    UI -->|POST /api/analyze (Audio)| API
+    UI -->|"POST /api/analyze (Audio)"| API
     API --> Pipeline
     Pipeline -->|Audio File| Whisper
     Whisper -->|Tokens & Probabilities| Scoring
     Scoring -->|Under-performing Words| Phoneme
     Phoneme -->|Target Phonemes| Pipeline
-    Pipeline -->|Text & Scores (No Audio)| Groq
+    Pipeline -->|"Text & Scores (No Audio)"| Groq
     Groq -->|Feedback Tips| Pipeline
     Pipeline -->|JSON Payload| Results
     
