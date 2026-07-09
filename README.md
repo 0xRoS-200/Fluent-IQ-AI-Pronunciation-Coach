@@ -1,3 +1,13 @@
+---
+title: FluentIQ - AI Pronunciation Coach
+emoji: 🎙️
+colorFrom: indigo
+colorTo: pink
+sdk: docker
+pinned: false
+app_port: 7860
+---
+
 # FluentIQ — AI-Powered Pronunciation Coach
 
 Upload or record a 30–45 second English audio sample and get instant pronunciation feedback with word-level highlights, powered by open-source Whisper and Groq's Llama 3.3.
