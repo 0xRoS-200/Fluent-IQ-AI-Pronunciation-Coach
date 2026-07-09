@@ -1,161 +1,155 @@
-# FluentIQ — System Architecture Document
+# FluentIQ — System Architecture & Design
 
-## 1. Overview
+## 1. Executive Summary
+FluentIQ is an AI-powered pronunciation assessment platform that evaluates English voice recordings. It is designed to run with minimal resources while adhering strictly to contemporary privacy standards, such as India's Digital Personal Data Protection (DPDP) Act. By combining on-server, open-source speech recognition (`faster-whisper`) with low-latency LLM inference via Groq, FluentIQ delivers word-level accent analysis and actionable pronunciation tips without persisting user audio.
 
-FluentIQ is a web application that assesses English pronunciation from audio recordings. A user uploads (or records) a 30–45 second audio clip, and the system returns an overall pronunciation score along with word-level feedback highlighting specific mistakes.
+## 2. System Topology
 
+```mermaid
+graph TD
+    %% Styling
+    classDef frontend fill:#eff6ff,stroke:#3b82f6,stroke-width:1px,color:#1e3a8a;
+    classDef backend fill:#f0fdf4,stroke:#22c55e,stroke-width:1px,color:#14532d;
+    classDef external fill:#faf5ff,stroke:#a855f7,stroke-width:1px,color:#581c87;
+
+    %% Nodes
+    subgraph Browser ["Frontend (Client Browser)"]
+        UI["User Interface"]
+        Record["MediaRecorder API"]
+        Uploader["Audio File Uploader"]
+        Consent["DPDP Consent Modal"]
+        Results["Interactive Results View"]
+    end
+
+    subgraph Server ["FastAPI Backend (Render Hosting)"]
+        API["API Endpoints"]
+        Pipeline["Analysis Pipeline"]
+        Whisper["faster-whisper Engine"]
+        Scoring["Scoring Engine"]
+        Phoneme["CMU Pronouncing Dictionary"]
+    end
+
+    subgraph APIs ["Third-Party APIs"]
+        Groq["Groq Llama 3.3 70B"]
+    end
+
+    %% Relations
+    Consent -->|User Accepts| UI
+    Record -->|Blob| UI
+    Uploader -->|File| UI
+    UI -->|POST /api/analyze (Audio)| API
+    API --> Pipeline
+    Pipeline -->|Audio File| Whisper
+    Whisper -->|Tokens & Probabilities| Scoring
+    Scoring -->|Under-performing Words| Phoneme
+    Phoneme -->|Target Phonemes| Pipeline
+    Pipeline -->|Text & Scores (No Audio)| Groq
+    Groq -->|Feedback Tips| Pipeline
+    Pipeline -->|JSON Payload| Results
+    
+    %% Assign classes
+    class UI,Record,Uploader,Consent,Results frontend;
+    class API,Pipeline,Whisper,Scoring,Phoneme backend;
+    class Groq external;
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        Browser (Frontend)                       │
-│                                                                 │
-│  ┌──────────────┐   ┌──────────────┐   ┌─────────────────────┐  │
-│  │  DPDP        │   │  Upload /    │   │  Results:           │  │
-│  │  Consent     │──▷│  Record      │──▷│  Score Gauge +      │  │
-│  │  Modal       │   │  Audio       │   │  Word Highlights    │  │
-│  └──────────────┘   └──────┬───────┘   └─────────────────────┘  │
-│                            │                      ▲              │
-└────────────────────────────┼──────────────────────┼──────────────┘
-                             │ POST /api/analyze    │ JSON
-                             ▼                      │
-┌────────────────────────────┼──────────────────────┼──────────────┐
-│                    FastAPI Backend (Render)        │              │
-│                            │                      │              │
-│  ┌─────────────────────────▼──────────────────────┴───────────┐  │
-│  │                   Analysis Pipeline                         │  │
-│  │                                                             │  │
-│  │  1. Validate format & duration (30–45s)                     │  │
-│  │  2. Transcribe with faster-whisper (local, on-server)       │  │
-│  │     → word timestamps + token probabilities                 │  │
-│  │  3. Score each word (probability → 0–100 score)             │  │
-│  │  4. Phoneme lookup (CMU Pronouncing Dictionary)             │  │
-│  │  5. Generate feedback via Groq (Llama 3.3 70B, text only)  │  │
-│  │  6. Return results → DELETE audio from memory               │  │
-│  └─────────────────────────────────────────────────────────────┘  │
-│                                                                   │
-│  External call (text only):   ┌─────────────────────────┐        │
-│  ─────────────────────────────▶  Groq API               │        │
-│                                │  Llama 3.3 70B          │        │
-│                                │  (pronunciation tips)   │        │
-│                                └─────────────────────────┘        │
-└───────────────────────────────────────────────────────────────────┘
-```
 
-## 2. Components & Connections
+## 3. Component Breakdown
 
-### Frontend (Vanilla HTML/CSS/JS)
-- **Consent modal** — blocks all functionality until the user accepts the DPDP-compliant privacy notice
-- **Upload zone** — drag-and-drop or file picker; validates audio duration client-side before upload
-- **Browser recording** — MediaRecorder API captures audio; auto-stops at 45 seconds
-- **Results view** — animated score gauge (SVG), color-coded word chips with hover tooltips, detailed feedback cards
-- Served as static files by the FastAPI backend
+### Client Browser (Frontend)
+- **Consent Gatekeeping:** A blocking modal that prevents application usage until the DPDP compliance notice is acknowledged.
+- **Audio Capture & Validation:** Utilizes the HTML5 `MediaRecorder` API to capture speech directly. It enforces a strict client-side limit of 45 seconds to optimize payload size and processing latency.
+- **Visual Analytics:** Features custom SVG meters, color-coded word highlights, and hover-triggered pronunciation tooltips powered by GSAP for clean transitions.
 
-### Backend (Python FastAPI)
-- **`main.py`** — HTTP server, routes, file validation (format, size ≤ 10 MB, duration 30–45s)
-- **`analyzer.py`** — orchestrates the pipeline: Whisper → scoring → phonemes → Groq → response
-- **`scoring.py`** — maps Whisper word probabilities to 0–100 scores with fluency and completeness metrics
-- **`phoneme_utils.py`** — CMU Dict lookups, identifies phonemes commonly difficult for English learners
+### Application Server (Backend)
+- **FastAPI Web Service:** Handles static file routing, CORS, and coordinates the analysis pipeline.
+- **Validation Layer:** Enforces server-side constraints (audio duration between 30–45 seconds, payload size $\le$ 10 MB).
+- **Orchestrated Analysis Pipeline:** Directs the execution flow:
+  1. Temporary audio decoding via `pydub`.
+  2. Transcription using `faster-whisper`.
+  3. Probability-to-score normalization.
+  4. Phoneme comparison using the CMU Pronouncing Dictionary.
+  5. Feedback compilation using Llama 3.3.
+  6. Final memory/disk cleanup.
 
-### External Services
-| Service | What it does | Data sent |
-|---------|-------------|-----------|
-| **Groq API** (Llama 3.3 70B) | Generates human-readable pronunciation tips | **Text only** — transcript + confidence scores. No audio. |
+### Downstream Integrations
+- **Groq Llama 3.3 70B:** Contextualizes word mispronunciations by detailing the standard IPA target, expected mouth position, and common pitfalls. Only textual metadata (transcripts and scoring indices) is sent, safeguarding voice privacy.
 
-No other external services are used. Whisper and CMU Dict run entirely on-server.
+---
 
-## 3. Models & APIs — Why These Choices
+## 4. Technical Stack Rationale
 
-### faster-whisper (open-source Whisper via CTranslate2)
-- **Why Whisper?** State-of-the-art English speech recognition; its word-level confidence probabilities are a strong signal for pronunciation quality — low confidence = the model struggled to recognise the word, which correlates with unclear pronunciation.
-- **Why faster-whisper?** 4× faster than OpenAI's vanilla `whisper` package, lower memory via int8 quantisation, and provides word timestamps with probabilities out of the box.
-- **Why not the OpenAI Whisper API?** Requires sending audio externally (DPDP concern), costs money per request, and doesn't expose token-level log probabilities.
-- **Why not Azure Pronunciation Assessment?** Purpose-built but adds Azure vendor lock-in and credential management. Our approach is portable and transparent.
-
-### Groq (Llama 3.3 70B Versatile)
-- **Why an LLM for feedback?** Rule-based feedback is generic ("pronounce this word better"). An LLM produces specific, contextualised tips ("the 'th' in 'think' sounds like 't' — try placing your tongue between your teeth").
-- **Why Groq?** Inference at ~500 tokens/sec (fastest available), generous free tier (30 req/min), and runs open models (no vendor lock-in on the model itself).
-- **Why Llama 3.3 70B?** Best quality-to-speed ratio among open models for structured feedback generation.
-- **Why not GPT-4o?** Adds OpenAI dependency and cost. Llama 3.3 produces comparable quality for this structured task.
-
-### CMU Pronouncing Dictionary
-- **Why?** Free, offline, gold-standard English phoneme dictionary. Enables phoneme-level analysis (identifying which specific sounds are difficult) without any API calls.
-
-## 4. How Pronunciation Scoring Works
-
-### Word-Level Scoring (Primary Signal)
-Each word from faster-whisper comes with a `probability` (0.0–1.0) representing how confidently the model recognised it. We map this non-linearly to a 0–100 score:
-
-| Whisper Probability | Score Range | Rating |
+| Component | Choice | Rationale |
 |---|---|---|
-| ≥ 0.95 | 95–100 | 🟢 Good |
-| 0.85–0.95 | 80–95 | 🟢 Good |
-| 0.70–0.85 | 60–80 | 🟡 Fair |
-| 0.50–0.70 | 40–60 | 🟡 Fair |
-| < 0.50 | 0–40 | 🔴 Poor |
+| **STT Engine** | `faster-whisper` (CTranslate2 quantised base) | Offers 4x inference speedup compared to standard OpenAI `whisper` python package. Runs fully on CPU, enabling cost-effective hosting without GPU requirements. |
+| **Phonetics Dictionary** | CMU Pronouncing Dictionary | Fully local lookup dictionary. Eliminates latency and external API costs for phoneme targets. |
+| **Feedback Engine** | Groq (Llama 3.3 70B Versatile) | Sub-second JSON generation (~500 tokens/sec), ensuring immediate UX feedback loop. |
+| **Hosting & Deployment** | Render + Docker | Automated Docker-based container builds. Direct deploy from Git push. |
 
-**Why this works:** STT models are trained on clear speech. When a word is mispronounced, the acoustic features don't match learned patterns, causing the model to assign lower confidence. This is an empirically validated proxy for pronunciation quality.
+---
 
-### Overall Score
+## 5. Scoring & Assessment Methodology
+
+### Word-Level Confidence Mapping
+FastAPI captures the individual token confidence output from `faster-whisper`. Since confidence is highly non-linear, we normalize it to a 0–100 scale:
+
+| Whisper Confidence | Score Range | Evaluation | Visual Guide |
+|---|---|---|---|
+| $\ge 0.95$ | 95–100 | Good | 🟢 |
+| $0.85$ – $0.95$ | 80–95 | Good | 🟢 |
+| $0.70$ – $0.85$ | 60–80 | Fair | 🟡 |
+| $0.50$ – $0.70$ | 40–60 | Fair | 🟡 |
+| $< 0.50$ | 0–40 | Poor | 🔴 |
+
+### Aggregated Performance Metrics
+- **Pronunciation Accuracy (60%):** Weighted average of individual word confidence scores.
+- **Speech Fluency (20%):** Assessed dynamically by analyzing silent gaps between word timestamps. Gaps between $0.1$s and $0.4$s are considered natural, while extended silence decreases this metric.
+- **Completeness (20%):** Ratio of successfully pronounced words (score $\ge 80$) to total words.
+
+---
+
+## 6. Privacy & DPDP Compliance
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant Browser as Frontend Browser
+    participant Backend as FastAPI Server
+    participant Whisper as faster-whisper (Local)
+    participant Groq as Groq API (Text Only)
+
+    User->>Browser: Record or Upload Audio
+    Browser->>Backend: POST /api/analyze (Audio Payload)
+    Note over Backend: Audio held in transient RAM/temp file
+    Backend->>Whisper: Perform Transcription
+    Whisper-->>Backend: Word timestamps + Confidence values
+    Note over Backend: Delete audio file (os.unlink & memory wipe)
+    Backend->>Groq: Generate Feedback (Text & Scores only)
+    Groq-->>Backend: Contextual pronunciation tips
+    Backend->>Browser: Send JSON Response (Scores & Tips)
+    Browser->>User: Render Interactive Performance Dash
 ```
-overall = (avg_word_scores × 0.60) + (fluency × 0.20) + (completeness × 0.20)
-```
-- **Fluency** (20%): Derived from inter-word gap analysis. Natural English has ~0.1–0.4s gaps; long pauses reduce the score.
-- **Completeness** (20%): Ratio of words rated "good" to total words.
 
-### What Gets Highlighted
-- Words scoring **< 80** are highlighted (yellow for "fair", red for "poor")
-- Each highlighted word shows:
-  - The specific issue type (mispronunciation, unclear, rushed, hesitation)
-  - Actionable feedback from the LLM
-  - Expected phonemes from CMU Dict
-  - Common confusion patterns for that phoneme
+The Digital Personal Data Protection Act (DPDP) 2023 sets high standards for processing personal voice data. FluentIQ is designed as a **zero-retention** system:
 
-## 5. DPDP Compliance
-
-The Digital Personal Data Protection Act 2023 (India) classifies voice recordings as personal data. Here is how FluentIQ complies:
-
-| DPDP Requirement | Implementation |
+| DPDP Principle | Implementation Details |
 |---|---|
-| **Lawful purpose & consent (§4–6)** | Explicit consent modal shown before any audio processing. User must actively check a consent box. Processing purpose is clearly stated. |
-| **Data minimisation (§4(2))** | Only audio is collected — no name, email, or account. Only the minimum data needed for analysis. |
-| **Storage & retention (§8)** | **Zero retention.** Audio is held in-memory only during the ~15 second analysis window. Immediately deleted (`os.unlink()` + `del`) after. No database, no file system persistence. |
-| **Purpose limitation (§5)** | Audio is used exclusively for pronunciation analysis. Never used for model training or any other purpose. |
-| **Data residency** | Audio is processed on the deployment server (Render, US/EU region). Audio **never leaves the server** — only extracted text is sent to Groq (US). This is transparently disclosed in the consent modal. |
-| **Right to erasure (§12)** | Nothing to erase — no data is persisted. This is stated clearly in the privacy notice. |
-| **Data breach notification (§8(6))** | Minimal breach surface since no data is stored. Architecture is documented for audit. |
-| **Grievance redressal (§13)** | Contact email provided in the app footer for data-related queries. |
-| **Children's data (§9)** | No age verification implemented (trade-off acknowledged; would add for production). |
+| **Explicit Consent (§4–6)** | The user must actively click to accept the DPDP notice before using the recording or upload interface. |
+| **Data Minimization (§4(2))** | No user creation, accounts, or persistent identifiers (cookies, tracking IDs) are stored. |
+| **Transient Storage (§8)** | Voice recording is stored strictly in ephemeral system RAM (as temporary bytes) or as a local temporary file for `faster-whisper`. As soon as transcription finishes, the file is unlinked (`os.unlink()`), garbage collected, and deleted from RAM. |
+| **Purpose Limitation (§5)** | Voice data is strictly analyzed to calculate scores and is never written to disk, sent to external APIs (except text prompts to Groq), or used for training. |
+| **Data Residency** | The host container processes audio locally. No audio metadata leaves the server. |
 
-### Data Flow Diagram (DPDP Perspective)
-```
-User Audio → [In-Memory Buffer] → faster-whisper (on-server) → Text + Scores
-                  │                                                    │
-                  │ ❌ NEVER stored to disk                            │
-                  │ ❌ NEVER sent externally                           ▼
-                  │                                          Groq API (text only)
-                  │                                                    │
-                  ▼                                                    ▼
-            DELETED immediately                              Feedback text returned
-            (os.unlink + del)                                to browser and displayed
-```
+---
 
-## 6. Trade-offs & What We'd Build Next
+## 7. Product Limitations & Roadmap
 
-### Trade-offs Made
+### Existing Trade-offs
+- **CPU Inference Latency:** Running Whisper on Render's CPU container takes ~10-15s for a 40s recording. This saves hosting costs but affects instantaneous feedback.
+- **Reference-Free Scoring:** Without a predefined script, the system relies on absolute transcription confidence. Mispronunciations that map to other real English words may occasionally be missed.
 
-| Decision | Trade-off | Rationale |
-|---|---|---|
-| Whisper `base` model on CPU | ~10–15s processing for 40s audio (vs. <2s on GPU) | Avoids GPU hosting cost (~$50/mo). Acceptable for demo. |
-| Confidence-based scoring | Not true phoneme-by-phoneme assessment | Simpler to implement, surprisingly effective. Azure's API would be more granular but adds vendor lock-in. |
-| No reference passage | Score is relative (STT confidence), not absolute | Allows open-ended speech vs. read-aloud only. Would add read-along mode as enhancement. |
-| No user accounts | No progress tracking over time | Simplifies DPDP (zero data storage) and reduces scope. |
-| Groq free tier | 30 req/min rate limit | Sufficient for demo/evaluation; would use paid tier for production. |
-
-### With Another Week
-1. **Reference passage mode** — user reads a given text; compare against TTS-generated reference using Dynamic Time Warping for phoneme-level alignment
-2. **GPU deployment** (Fly.io GPU or Modal) for sub-2 second processing
-3. **Whisper `small` or `medium` model** for improved accuracy
-4. **Phoneme-level IPA visualization** — show exactly which sound was off
-5. **Progress tracking** with optional (consented) user accounts and session history
-6. **Real-time feedback** via WebSocket streaming during recording
-7. **Age verification** for full DPDP children's data compliance
-8. **India-region deployment** (AWS Mumbai or Azure Central India) for data residency
+### Future Enhancements
+1. **Reference-Aligned Assessment:** Allow reading from a chosen prompt and align user audio with target transcripts using Dynamic Time Warping (DTW) for phoneme-level match verification.
+2. **GPU Acceleration:** Migrate server pipelines to Fly.io GPUs or Modal to achieve sub-2s responses.
+3. **Advanced IPA Visualizations:** Display custom IPA character charts highlighting specifically mispronounced phonemes in the browser.
+4. **Local Audio Encryption:** Encrypt temporary files in-transit during pipeline execution to prevent exposure in multi-tenant cloud environments.
