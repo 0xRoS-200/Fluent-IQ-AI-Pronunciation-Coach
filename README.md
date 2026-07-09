@@ -3,9 +3,9 @@ title: FluentIQ - AI Pronunciation Coach
 emoji: 🎙️
 colorFrom: indigo
 colorTo: pink
-sdk: docker
+sdk: gradio
+app_file: app.py
 pinned: false
-app_port: 7860
 ---
 
 # FluentIQ — AI-Powered Pronunciation Coach
