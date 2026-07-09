@@ -21,7 +21,7 @@ graph TD
         Results["Interactive Results View"]
     end
 
-    subgraph Server ["FastAPI Backend (Render Hosting)"]
+    subgraph Server ["FastAPI Backend (Railway/Render Hosting)"]
         API["API Endpoints"]
         Pipeline["Analysis Pipeline"]
         Whisper["faster-whisper Engine"]
@@ -83,7 +83,7 @@ graph TD
 | **STT Engine** | `faster-whisper` (CTranslate2 quantised base) | Offers 4x inference speedup compared to standard OpenAI `whisper` python package. Runs fully on CPU, enabling cost-effective hosting without GPU requirements. |
 | **Phonetics Dictionary** | CMU Pronouncing Dictionary | Fully local lookup dictionary. Eliminates latency and external API costs for phoneme targets. |
 | **Feedback Engine** | Groq (Llama 3.3 70B Versatile) | Sub-second JSON generation (~500 tokens/sec), ensuring immediate UX feedback loop. |
-| **Hosting & Deployment** | Render + Docker | Automated Docker-based container builds. Direct deploy from Git push. |
+| **Hosting & Deployment** | Railway/Render + Docker | Automated Docker-based container builds. Supports direct deploy from Git push or CLI upload. |
 
 ---
 
@@ -145,7 +145,7 @@ The Digital Personal Data Protection Act (DPDP) 2023 sets high standards for pro
 ## 7. Product Limitations & Roadmap
 
 ### Existing Trade-offs
-- **CPU Inference Latency:** Running Whisper on Render's CPU container takes ~10-15s for a 40s recording. This saves hosting costs but affects instantaneous feedback.
+- **CPU Inference Latency:** Running Whisper on a shared CPU container (like Railway or Render) takes ~10-15s for a 40s recording. This saves hosting costs but affects instantaneous feedback.
 - **Reference-Free Scoring:** Without a predefined script, the system relies on absolute transcription confidence. Mispronunciations that map to other real English words may occasionally be missed.
 
 ### Future Enhancements
