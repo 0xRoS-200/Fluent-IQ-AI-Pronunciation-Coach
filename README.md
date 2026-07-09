@@ -1,5 +1,7 @@
 # FluentIQ — AI-Powered Pronunciation Coach
 
+**Live Demo:** [https://triumphant-possibility-production-a8a8.up.railway.app](https://triumphant-possibility-production-a8a8.up.railway.app)
+
 Upload or record a 30–45 second English audio sample and get instant pronunciation feedback with word-level highlights, powered by open-source Whisper and Groq's Llama 3.3.
 
 ## ✨ Features
@@ -53,14 +55,14 @@ uvicorn backend.main:app --reload --port 8000
 
 Open http://localhost:8000 in your browser.
 
-## Deploy to Render
+## Deploy to Railway
 
-1. Push this repo to GitHub
-2. Create a new **Web Service** on [Render](https://render.com)
-3. Connect your GitHub repo
-4. Render will auto-detect the `Dockerfile`
-5. Add environment variable: `GROQ_API_KEY` = your Groq key
-6. Deploy!
+1. Install the Railway CLI: `npm install -g @railway/cli`
+2. Login to your Railway account: `railway login`
+3. Create an Empty Service in your Railway project dashboard.
+4. Link your local project: `railway link` (and choose the service)
+5. Set environment variable: `GROQ_API_KEY` = your Groq key in the service settings
+6. Deploy: `railway up`
 
 ## Architecture
 
